@@ -39,8 +39,11 @@ print('The library you are using  is:', LIB)
 print('Flanking sequence length is:', FLANK)
 print('Number of blast hits in ExtractAlign:', SEQNUM)
 
-#Index the genome
-subprocess.check_call('samtools faidx {}'.format(GEN),shell=True)
+#Navigate to working directory
+os.chdir(LOC)
+
+#Load Modules
+subprocess.check_call('ml intel rmblast', shell=True)
 
 #Create Blast Database
 subprocess.check_call('makeblastdb -in {} -dbtype nucl'.format(GEN),shell=True)
@@ -49,4 +52,4 @@ subprocess.check_call('makeblastdb -in {} -dbtype nucl'.format(GEN),shell=True)
 subprocess.check_call('blastn -query {} -db {} -out blast_results -outfmt 6'.format(LIB, GEN), shell=True)
 
 #Run Extract Align
-subprocess.check_call('perl {}/extractAlignTEs.pl -genome {} -blast ExAlign_out -consTEs {} -seqBuffer {} -seqNum {} -align'.format(LOC, GEN, LIB, FLANK, SEQNUM), shell=True
+subprocess.check_call('perl {}/extractAlignTEs.pl -genome {} -blast ExAlign_out -consTEs {} -seqBuffer {} -seqNum {} -align'.format(LOC, GEN, LIB, FLANK, SEQNUM), shell=True)
