@@ -37,10 +37,10 @@ os.chdir(LOC)
 
 #Replace the trailing part of the header with a new system:
 with gzip.open(DATA, 'rt') as OLD:
-	# 1:N:0:1 > OP:i:1
-	OLD.replace("1:N:0:1", "OP:i:1")
-	# 2:N:0:1 > OP:i:2
-	OLD.replace("2:N:0:1", "OP:i:2")
+    # 1:N:0:1 > OP:i:1
+    OLD.replace("1:N:0:1", "OP:i:1")
+    # 2:N:0:1 > OP:i:2
+    OLD.replace("2:N:0:1", "OP:i:2")
 
 #Initialize numbering system at one
 COUNT = 0
@@ -50,7 +50,7 @@ NEW_RECORDS=[]
 
 #open up the .gz fasta file using BioPython
 with gzip.open(DATA, "rt") as FASTQ_IN:
-	for seq_record in SeqIO.parse(FASTQ_IN, "fastq"):
+    for seq_record in SeqIO.parse(FASTQ_IN, "fastq"):
         #Set the Count
         COUNT += 1
         #Set the contig's naming with 15 leading zeros
@@ -64,5 +64,6 @@ with gzip.open(DATA, "rt") as FASTQ_IN:
 
         #Append to the NEW_RECORDS list
         NEW_RECORDS.append(seq_record)
-	#Finally, write out the full new header.        
-	SeqIO.write(NEW_RECORDS, DATA, "fastq")
+    #Finally, write out the full new header.        
+    SeqIO.write(NEW_RECORDS, DATA, "fastq")
+
