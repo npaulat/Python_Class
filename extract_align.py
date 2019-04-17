@@ -1,4 +1,5 @@
 #Import python packages
+import re
 import os
 from Bio import SeqIO
 import argparse
@@ -47,6 +48,7 @@ NUMBER=args["seqNum"]
 
 #Create the processed_blast.txt file for writing
 BLAST_OUT = open("processed_blast.txt", "w")
+F = open("pre-processed.txt","w")
 
 # Read the blast output into pandas, only include info we care about:
 # TE_Name, Contig, Start, Stop, E-Value, Bit-Score
@@ -56,7 +58,6 @@ BLAST_INPUT = pd.read_csv(BLAST, sep='\t', lineterminator='\n', header=None, use
 LIST_TES_QUERIED=[]
 for record in SeqIO.parse(CONSTES,'fasta'):
         LIST_TES_QUERIED.append(str(record.id))
-
 
 # Use a for-loop to create the processed_blast.txt file.
 
@@ -79,62 +80,131 @@ for i in LIST_TES_QUERIED:
         DROPPED_COLUMNS['12'] = (DROPPED_COLUMNS[9] - DROPPED_COLUMNS[8])
 
         #If the length is >0, then put 1... if <0, then put -1
-#       DROPPED_COLUMNS['13'] = DROPPED_COLUMNS['12'].apply(lambda x: '1' if x > 0 else '-1')
         DROPPED_COLUMNS.loc[DROPPED_COLUMNS['12'] < 0, '13'] = '-1'
         DROPPED_COLUMNS.loc[DROPPED_COLUMNS['12'] > 0, '13'] = '1'
-#       DROPPED_COLUMNS = DROPPED_COLUMNS.astype({'13': int})
         DROPPED_COLUMNS['13'] = pd.to_numeric(DROPPED_COLUMNS['13'])
 
         #Creating a new "start" column... this is clunky, but it works
-#       DROPPED_COLUMNS['14'] = DROPPED_COLUMNS['13'].apply(lambda x: [8] if x == 1 else '0')
         DROPPED_COLUMNS.loc[DROPPED_COLUMNS['13'] == 1, '14'] = DROPPED_COLUMNS[8]
         DROPPED_COLUMNS.loc[DROPPED_COLUMNS['13'] < 0, '14'] = '0'
-#       DROPPED_COLUMNS = DROPPED_COLUMNS.astype(int)
         DROPPED_COLUMNS['14'] = pd.to_numeric(DROPPED_COLUMNS['14'])
-#       DROPPED_COLUMNS['15'] = DROPPED_COLUMNS['13'].apply(lambda x: [9] if x == -1 else '0')
         DROPPED_COLUMNS.loc[DROPPED_COLUMNS['13'] == -1, '15'] = DROPPED_COLUMNS[9]
         DROPPED_COLUMNS.loc[DROPPED_COLUMNS['13'] > 0, '15'] = '0'
-#       DROPPED_COLUMNS = DROPPED_COLUMNS.astype({'15': int})
         DROPPED_COLUMNS['15'] = pd.to_numeric(DROPPED_COLUMNS['15'])
         DROPPED_COLUMNS['16'] = (DROPPED_COLUMNS['14'] + DROPPED_COLUMNS['15'])
         DROPPED_COLUMNS['17'] = (DROPPED_COLUMNS['16'] - BUFFER)
-#       DROPPED_COLUMNS['18'] = DROPPED_COLUMNS['17'].apply(lambda x: 0 if x < 0 else ['17'])
         DROPPED_COLUMNS.loc[DROPPED_COLUMNS['17'] < 0, '18'] = '0'
         DROPPED_COLUMNS.loc[DROPPED_COLUMNS['17'] > 0, '18'] = DROPPED_COLUMNS['17']
-#       DROPPED_COLUMNS = DROPPED_COLUMNS.astype({'18': int})
-        DROPPED_COLUMNS['18'] = pd.to_numeric(DROPPED_COLUMNS['18'])
+        DROPPED_COLUMNS['18'] = pd.to_numeric(DROPPED_COLUMNS['18'], downcast='signed')
 
-        #Creating a new length column... again... mind the clunkiness
+        #Creating a new length column.
         DROPPED_COLUMNS['19'] = DROPPED_COLUMNS['12'].abs()
-
-
         DROPPED_COLUMNS['17'] = pd.to_numeric(DROPPED_COLUMNS['17'])
         DROPPED_COLUMNS['19'] = pd.to_numeric(DROPPED_COLUMNS['19'])
-
         DROPPED_COLUMNS['20'] = (2*BUFFER+DROPPED_COLUMNS['19']+DROPPED_COLUMNS['17']-DROPPED_COLUMNS['18'])
+        DROPPED_COLUMNS['20'] = pd.to_numeric(DROPPED_COLUMNS['20'], downcast='signed')
 
         #Move the forward and reverse information back to the end of the dataframe
         DROPPED_COLUMNS['21'] = DROPPED_COLUMNS['13']
 
         #Cleaning up the dataframe to get rid of all the excess crap
-#       CLEAN_DF = DROPPED_COLUMNS['8','9','12','13','14','15','16','17','19'].drop()
-        CLEAN_DF = DROPPED_COLUMNS.drop(columns=['8','9','12','13','14','15','16','17','19'])
+        CLEAN_DF = DROPPED_COLUMNS.drop(columns=['12','13','14','15','16','17','19'])
+        CLEAN_DF2 = CLEAN_DF.drop([8,9], axis=1)
 
+        #Finally, write the output to an itermediate file which will be deleted later.
+        F.write(str(CLEAN_DF2.head(NUMBER)))
+F.close()
 
+# Go back and edit the blast output to remove the header line and the indexed line.
 
-        #Finally, write out the processed_blast.txt file
-        BLAST_OUT.write(str(CLEAN_DF.head(NUMBER)))
+#This bit removed the first column of index information
+IN = open("pre-processed.txt", "r")
+for line in IN:
+    if line.strip():
+        BLAST_OUT.write("\t".join(line.split()[1:]) + "\n")
+IN.close()
+BLAST_OUT.close()
 
+#This bit removes the firs line of the file.
+with open("processed_blast.txt", 'r+') as f: #open in read/write mode
+        f.readline() #read the first line and throw it out
+        data = f.read() #read the rest
+        f.seek(0) #set the cursor to the top of the file
+        f.write(data) #write the data back
+        f.truncate() #set the file size to the current size
+BLAST_OUT.close()
+
+#Delete the intermediate file as it's no longer needed.
+os.remove("pre-processed.txt")
 
 
 #########################################################################
-# STEP 2 - figure out how to flip the sequence if blast hit is backwards
+#      STEP 2 - Create a new sequence file for every queried TE         #
+#########################################################################
+
+for record in SeqIO.parse(CONSTES, 'fasta'):
+        FIXED_ID = re.sub('#', '__', record.id)
+        FIXED_ID = re.sub('/', '___', FIXED_ID)
+        record.id = 'CONSENSUS-' + FIXED_ID
+        record.description = ''
+        SeqIO.write(record, FIXED_ID + '.fas', 'fasta')
+
+
+#########################################################################
+#   STEP 3 - Populate the new sequence files with extracted blast hits  #
+#########################################################################
+
+with open("processed_blast.txt", 'r') as BED:
+        for line in BED:
+                TE, CONTIG, START, LENGTH, ORIENT = line.split()
+
+############################################################
+
 # There's a biopython implementation for this "reverse_compliment()
 
 #for record in SeqIO.parse(????, "fasta"):
 #       FLIPPED = record.reverse_compliment(????)
 
-
+###########################################################
 # PSEUDOCODE
 #If the processed_blast.txt file contains a -1 at the end of the line, pull sequence out, reverse it, print it to file.
 #If the processed_blast.txt file contains a 1 at the end of the line, pull the sequence out, print it to file.
+
+##############################################################
+
+#For every line in processed_blast.txt,
+#       STOP = START + LENGTH
+#       extract the sequence (CONTIG, START, STOP) from the genome
+#       Change the header from CONTIG to the TE
+#               record.id = TE
+#               record.description = ''
+#       write the record to the corresponding cosensus TE.fas file
+#       TE =
+#
+#       record.id = 'CONSENSUS-' + FIXED_ID
+#       record.description = ''
+#       SeqIO.write(record, FIXED_ID + '.fas', 'fasta')
+
+##############################################################
+
+#With open TE_cons.fa;
+#       append extracted sequences that match the name of the cons file.
+
+
+#################################################################################
+#                I THINK THIS IS PROBABLY THE BEST OPTION                       #
+#################################################################################
+#                                                                               #
+#Create a gigantic fasta file with all of the extracted sequences from the BED. #
+#Create a list of all the TEs... I think we already did it (LIST_TES_QUERIED)   #
+#From there, use BioPython on that fasta file of hits.                          #
+#                                                                               #
+# TE_HITS = open("te_hits.fas", "rU")                                           #
+# For record in SeqIO.parse(TE_HITS, "fasta"):                                  #
+#        for ITEM in LIST_TES_QUERIED:                                          #
+#                if ITEM in record.id:                                          #
+#                        append record.id to "ITEM".fas                         #
+#                        append record.seq to "ITEM".fas                        #
+#TE_HITS.close()                                                                #
+#                                                                               #
+#################################################################################
