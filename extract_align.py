@@ -5,6 +5,7 @@ from Bio import SeqIO
 import argparse
 import pandas as pd
 import numpy as np
+import subprocess
 
 ###################################################################
 ###################################################################
@@ -32,9 +33,11 @@ parser.add_argument('-blst', '--blast', type=str, help='input blast file (tab fo
 parser.add_argument('-cons', '--consTEs', type=str, help='file of consensus elements', required=True)
 parser.add_argument('-buf', '--seqBuffer', type=int, help='additional 5 prime and 3 prime bases in extracted sequence', default=500)
 parser.add_argument('-num', '--seqNum', type=int, help='number of sequences to extract', default=40)
+parser.add_argument('-aln', '--align', type=str, help='aligns the sequnces with MUSCLE', default=False, required=False)
 args=vars(parser.parse_args())
 
 #Make shorthand arguments:
+MUSCLE=args["align"]
 GENOME=args["genome"]
 BLAST=args["blast"]
 CONSTES=args["consTEs"]
@@ -126,18 +129,34 @@ for record in SeqIO.parse(CONSTES, 'fasta'):
 #   STEP 3 - Populate the new sequence files with extracted blast hits  #
 #########################################################################
 
-
 with open("processed_blast.txt", 'r') as BED:
         for line in BED:
-                TE, CONTIG, START, LENGTH, ORIENT = line.split()
+                TE_BED, CONTIG, START, LENGTH, ORIENT = line.split()
                 STOP = int(START) + int(LENGTH)
-                with open("output.fas", "w") as out:
-                        for rec in SeqIO.parse(GENOME, "fasta"):
-                                if ORIENT == 1:
-                                        out.write(str(">" + CONTIG + "-" + str(START) + "-" + str(STOP) + "(" + str(ORIENT) + ")" + '\n'))
-                                        out.write(str(rec.seq[int(START):int(STOP)] + "\n"))
-                                else:
-                                        out.write(str(">" + CONTIG + "-" + str(START) + "-" + str(STOP) + "(" + str(ORIENT) + ")" + '\n'))
-                                        sequence = rec.seq[int(START):int(STOP)]
-                                        out.write(str(sequence.reverse_complement() + "\n"))
+                for seq in SeqIO.parse(GENOME, "fasta"):
+                        chrs = {}
+                        chrs[seq.id]=seq.seq
+                        if CONTIG == seq.id:
+                                for TE in LIST_TES_QUERIED:
+                                        with open(TE+".fas", 'a') as out:
+                                                if TE_BED == TE:
+                                                        if ORIENT == 1:
+                                                                out.write(str(">" + CONTIG + "-" + str(START) + "-" + str(STOP) + "(" + str(ORIENT) + ")" + '\n'))
+                                                                out.write(str(chrs[CONTIG][int(START):int(STOP)] + "\n"))
+                                                        else:
+                                                                out.write(str(">" + CONTIG + "-" + str(START) + "-" + str(STOP) + "(" + str(ORIENT) + ")" + '\n'))
+                                                                sequence = chrs[CONTIG][int(START):int(STOP)]
+                                                                out.write(str(sequence.reverse_complement() + "\n"))
+out.close()
 
+
+#########################################################################
+#         STEP 4 - Align the TE output files if specified               #
+#########################################################################
+
+SOFTWARE = '/lustre/work/daray/software/muscle/'
+
+if MUSCLE == 'True':
+        for FILE in LIST_TES_QUERIED:
+                ALN_COMMAND = "{}muscle -in {} -out {}".format(SOFTWARE, FILE+".fas", FILE+".muscle.fas")
+                subprocess.run(ALN_COMMAND, shell=True)
